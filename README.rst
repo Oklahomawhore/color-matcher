@@ -222,6 +222,9 @@ API Usage
    :target: http://www.hahne.website/color_matcher.html
    :alt: Deploy on Spaces
 
+.. |starhistory| image:: https://api.star-history.com/svg?repos=hahnec/color-matcher&type=Date
+   :alt: Star history cannot be rendered.
+
 Experimental results
 --------------------
 
@@ -237,6 +240,11 @@ where :math:`f(k,\cdot)` and :math:`F(k,\cdot)` represent the Probability Densit
 More detailed information can be found in `our IEEE paper <https://arxiv.org/pdf/2010.11687.pdf>`__.
 
 |vspace|
+
+Stats
+-----
+
+|starhistory|
 
 Citation
 --------

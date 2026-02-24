@@ -5,7 +5,7 @@ color-matcher
 Description
 -----------
 
-*color-matcher* enables color transfer across images which comes in handy for automatic color-grading
+*color-matcher* enables color transfer across images which comes in handy for image data augmentation in deep learning, automatic color-grading
 of photographs, paintings and film sequences as well as light-field and stopmotion corrections. The methods behind
 the mappings are based on the approach from Reinhard *et al.*, the Monge-Kantorovich Linearization (MKL) as proposed by
 Pitie *et al.* and our analytical solution to a Multi-Variate Gaussian Distribution (MVGD) transfer in conjunction with

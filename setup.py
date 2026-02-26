@@ -97,6 +97,11 @@ setup(
       entry_points={'console_scripts': ['color-matcher=color_matcher.bin.cli:main'], },
       packages=find_packages(),
       install_requires=req_list,
+      extras_require={
+          'gpu': ['torch>=2.1'],
+          'video': ['opencv-python>=4.5'],
+          'all': ['torch>=2.1', 'opencv-python>=4.5'],
+      },
       include_package_data=True,
       python_requires='>=3',
       zip_safe=False,

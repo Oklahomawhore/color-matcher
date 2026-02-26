@@ -23,6 +23,7 @@ __license__ = """
 from color_matcher import __version__
 from color_matcher.top_level import ColorMatcher, METHODS
 from color_matcher.io_handler import *
+from color_matcher.io_handler import VIDEO_EXTS, is_video_file
 
 import getopt
 import sys, os
@@ -32,10 +33,14 @@ def usage():
 
     print("Usage: color-matcher <options>\n")
     print("Options:")
-    print("-s <path>,     --src=<path>       Specify source image file or folder to process")
+    print("-s <path>,     --src=<path>       Specify source image/video file or folder to process")
     print("-r <filepath>, --ref=<filepath>   Specify target image file")
     print("-m <method>,   --method=<method>  Provide color transfer method such as:")
     print("                                  "+', '.join(['"'+m+'"' for m in METHODS]))
+    print("-o <filepath>, --output=<path>    Specify output file path (for video processing)")
+    print("-b <int>,      --batch-size=<n>   Batch size for video processing (default: 8)")
+    print("-n <int>,      --num-workers=<n>  Number of workers for parallel processing (default: 4)")
+    print("-g,            --no-gpu           Disable GPU acceleration")
     print("-w ,           --win              Select files from window")
     print("-h,            --help             Print this help message")
     print("")
@@ -44,7 +49,9 @@ def usage():
 def parse_options(argv):
 
     try:
-        opts, args = getopt.getopt(argv, "hs:r:m:w", ["help", "src=", "ref=", "method=", "win"])
+        opts, args = getopt.getopt(argv, "hs:r:m:wo:b:n:g",
+                                   ["help", "src=", "ref=", "method=", "win",
+                                    "output=", "batch-size=", "num-workers=", "no-gpu"])
     except getopt.GetoptError as e:
         print(e)
         sys.exit(2)
@@ -57,6 +64,10 @@ def parse_options(argv):
     cfg['ref_path'] = '.'
     cfg['method'] = METHODS[0]
     cfg['win'] = None
+    cfg['output'] = None
+    cfg['batch_size'] = 8
+    cfg['num_workers'] = 4
+    cfg['gpu'] = True
 
     if opts:
         for (opt, arg) in opts:
@@ -64,14 +75,21 @@ def parse_options(argv):
                 usage()
                 sys.exit()
             if opt in ("-s", "--src"):
-                cfg['src_path'] = arg.strip(" \"\'")
+                cfg['src_path'] = arg.strip(" \"\'") 
             if opt in ("-r", "--ref"):
-                cfg['ref_path'] = arg.strip(" \"\'")
+                cfg['ref_path'] = arg.strip(" \"\'") 
             if opt in ("-m", "--method"):
-                cfg['method'] = arg.strip(" \"\'")
+                cfg['method'] = arg.strip(" \"\'") 
             if opt in ("-w", "--win"):
                 cfg['win'] = True
-
+            if opt in ("-o", "--output"):
+                cfg['output'] = arg.strip(" \"\'") 
+            if opt in ("-b", "--batch-size"):
+                cfg['batch_size'] = int(arg.strip())
+            if opt in ("-n", "--num-workers"):
+                cfg['num_workers'] = int(arg.strip())
+            if opt in ("-g", "--no-gpu"):
+                cfg['gpu'] = False
     return cfg
 
 
@@ -98,7 +116,7 @@ def main():
     if os.path.isdir(cfg['src_path']) and os.path.isfile(cfg['ref_path']):
         # case where source is directory and reference is file
         filenames = [os.path.join(cfg['src_path'], f) for f in os.listdir(cfg['src_path'])
-                     if f.lower().endswith(FILE_EXTS)]
+                     if f.lower().endswith(FILE_EXTS) or f.lower().endswith(VIDEO_EXTS)]
         output_path = os.path.join(cfg['src_path'], 'batch_proc_'+str(cfg['method']))
         os.makedirs(output_path, exist_ok=True)
         print('Output files are placed in created directory %s' % os.path.join('.', os.path.basename(output_path)))
@@ -117,16 +135,39 @@ def main():
     # method handling
     cfg['method'] = cfg['method'] if cfg['method'] in METHODS else METHODS[0]
 
-    # read reference image
-    ref = load_img_file(cfg['ref_path'])
+    # check if source is a video file
+    if len(filenames) == 1 and is_video_file(filenames[0]):
+        # video processing mode
+        from color_matcher.video_matcher import VideoColorMatcher
 
-    # process images
-    for f in filenames:
-        src = load_img_file(f)
-        res = ColorMatcher(src=src, ref=ref, method=cfg['method']).main()
-        filename = os.path.splitext(os.path.basename(f))[0]+'_'+cfg['method']
-        file_ext = os.path.splitext(f)[-1]
-        save_img_file(res, file_path=os.path.join(output_path, filename), file_type=file_ext[1:])
+        def print_progress(current, total):
+            pct = current * 100 // total
+            bar = '=' * (pct // 2) + '>' + ' ' * (50 - pct // 2)
+            print('\r  [%s] %d/%d frames (%d%%)' % (bar, current, total, pct), end='', flush=True)
+
+        print('Processing video: %s' % filenames[0])
+        vm = VideoColorMatcher(
+            src_video=filenames[0],
+            ref=cfg['ref_path'],
+            method=cfg['method'],
+            output_path=cfg['output'],
+            batch_size=cfg['batch_size'],
+            num_workers=cfg['num_workers'],
+            gpu=cfg['gpu'],
+            progress_callback=print_progress,
+        )
+        out = vm.process()
+        print('\nOutput video: %s' % out)
+    else:
+        # image processing mode (original behavior)
+        ref = load_img_file(cfg['ref_path'])
+
+        for f in filenames:
+            src = load_img_file(f)
+            res = ColorMatcher(src=src, ref=ref, method=cfg['method']).main()
+            filename = os.path.splitext(os.path.basename(f))[0]+'_'+cfg['method']
+            file_ext = os.path.splitext(f)[-1]
+            save_img_file(res, file_path=os.path.join(output_path, filename), file_type=file_ext[1:])
 
     return True
 

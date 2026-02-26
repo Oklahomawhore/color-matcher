@@ -23,3 +23,15 @@ from .hist_matcher import HistogramMatcher
 from .mvgd_matcher import TransferMVGD
 from .reinhard_matcher import ReinhardMatcher
 from .baseclass import MatcherBaseclass
+from .gpu_utils import HAS_GPU, DEVICE_TYPE, TORCH_AVAILABLE
+
+# Conditional imports for GPU and video modules
+if TORCH_AVAILABLE:
+    from .gpu_hist_matcher import GPUHistogramMatcher
+    from .gpu_mvgd_matcher import GPUTransferMVGD
+    from .gpu_reinhard_matcher import GPUReinhardMatcher
+
+try:
+    from .video_matcher import VideoColorMatcher
+except ImportError:
+    pass  # OpenCV not installed

@@ -4,3 +4,5 @@ docutils
 ddt
 matplotlib
 packaging>=24.2
+opencv-python>=4.5
+torch>=2.1

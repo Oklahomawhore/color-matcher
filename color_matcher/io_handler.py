@@ -31,6 +31,7 @@ except ImportError:
 from color_matcher.normalizer import Normalizer
 
 FILE_EXTS = ('bmp', 'png', 'tiff', 'tif', 'jpeg', 'jpg')
+VIDEO_EXTS = ('mp4', 'avi', 'mov', 'mkv', 'webm')
 
 
 def save_img_file(img, file_path: str = None, file_type: str = None) -> bool:
@@ -126,3 +127,78 @@ def select_file(init_dir=None, title=''):
     root.update()
 
     return file_path if file_path else None
+
+
+def load_video_meta(file_path: str) -> dict:
+    """
+    Load video metadata using OpenCV.
+
+    :param file_path: Path to video file
+    :type file_path: str
+    :return: Dictionary with video metadata: fps, width, height, frame_count, codec
+    :rtype: dict
+    """
+    try:
+        import cv2
+    except ImportError:
+        raise ImportError('OpenCV is required for video processing. Install with: pip install opencv-python')
+
+    cap = cv2.VideoCapture(file_path)
+    if not cap.isOpened():
+        raise IOError('Cannot open video file: %s' % file_path)
+
+    meta = {
+        'fps': cap.get(cv2.CAP_PROP_FPS),
+        'width': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+        'height': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+        'frame_count': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
+        'codec': int(cap.get(cv2.CAP_PROP_FOURCC)),
+    }
+    cap.release()
+    return meta
+
+
+def create_video_writer(file_path: str, fps: float, width: int, height: int,
+                        codec: str = 'mp4v') -> 'cv2.VideoWriter':
+    """
+    Create an OpenCV VideoWriter for output.
+
+    :param file_path: Output video file path
+    :param fps: Frames per second
+    :param width: Frame width
+    :param height: Frame height
+    :param codec: FourCC codec string (default: 'mp4v')
+
+    :type file_path: str
+    :type fps: float
+    :type width: int
+    :type height: int
+    :type codec: str
+
+    :return: OpenCV VideoWriter instance
+    :rtype: cv2.VideoWriter
+    """
+    try:
+        import cv2
+    except ImportError:
+        raise ImportError('OpenCV is required for video processing. Install with: pip install opencv-python')
+
+    fourcc = cv2.VideoWriter_fourcc(*codec)
+    writer = cv2.VideoWriter(file_path, fourcc, fps, (width, height))
+
+    if not writer.isOpened():
+        raise IOError('Cannot create video writer for: %s' % file_path)
+
+    return writer
+
+
+def is_video_file(file_path: str) -> bool:
+    """
+    Check if the file has a video extension.
+
+    :param file_path: File path to check
+    :type file_path: str
+    :return: True if file has a video extension
+    :rtype: bool
+    """
+    return file_path.lower().endswith(VIDEO_EXTS)

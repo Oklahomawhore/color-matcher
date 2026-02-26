@@ -199,13 +199,22 @@ class VideoColorMatcher:
         Process the entire video with pipelined read/process/write architecture.
 
         On GPU (CUDA/MPS): Three-thread pipeline with GPU-accelerated frame processing.
-        On CPU: Multi-process parallel frame processing.
+        On CPU: Multi-threaded parallel frame processing.
+
+        For histogram matching on MPS the actual computation is numpy-based (because MPS
+        scatter/sort ops are slower than optimised numpy).  In that case we route to the
+        CPU parallel path which uses a thread pool for real parallelism.
 
         :return: Path to the output video file
         :rtype: str
         """
 
         if self._use_gpu:
+            # On MPS, histogram-only methods gain nothing from the single-thread GPU
+            # pipeline because the hot-path is pure numpy.  Use the parallel CPU path
+            # with cached GPU matchers so we still benefit from pre-computed ref stats.
+            if DEVICE_TYPE == 'mps' and self._method in ('hm',):
+                return self._process_cpu_parallel_cached()
             return self._process_gpu_pipeline()
         else:
             return self._process_cpu_parallel()
@@ -319,7 +328,7 @@ class VideoColorMatcher:
 
     def _process_cpu_parallel(self) -> str:
         """
-        CPU parallel processing using ProcessPoolExecutor for frame-level parallelism.
+        CPU parallel processing using ThreadPoolExecutor for frame-level parallelism.
         """
 
         cap = cv2.VideoCapture(self._src_video)
@@ -363,6 +372,62 @@ class VideoColorMatcher:
 
                     if self._progress_callback:
                         self._progress_callback(batch_start + i + 1, total_frames)
+
+        writer.release()
+        return self._output_path
+
+    def _process_cpu_parallel_cached(self) -> str:
+        """
+        Multi-threaded CPU processing with pre-computed GPU reference caches.
+
+        Used for methods (like histogram matching on MPS) where the per-frame
+        computation is numpy-based but we still benefit from pre-computed
+        reference statistics.
+        """
+
+        cap = cv2.VideoCapture(self._src_video)
+        total_frames = self._meta['frame_count']
+        fps = self._meta['fps']
+        width = self._meta['width']
+        height = self._meta['height']
+
+        writer = create_video_writer(self._output_path, fps, width, height)
+
+        # Read all frames first (for ordered output)
+        frames = []
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frames.append(frame_rgb)
+        cap.release()
+
+        # Process frames in batches using thread pool with GPU-cached matchers
+        with ThreadPoolExecutor(max_workers=self._num_workers) as executor:
+            for batch_start in range(0, len(frames), self._batch_size):
+                batch_end = min(batch_start + self._batch_size, len(frames))
+                batch = frames[batch_start:batch_end]
+
+                def process_one_cached(frame):
+                    src_dtype = frame.dtype
+                    frame_float = Normalizer(frame).type_norm(new_min=0.0, new_max=1.0) if np.issubdtype(src_dtype, np.integer) else frame.astype(np.float64)
+                    if frame_float.ndim == 2:
+                        frame_float = frame_float[..., np.newaxis]
+                    result = self._process_frame_gpu(frame_float)
+                    return Normalizer(result).uint8_norm()
+
+                results = list(executor.map(process_one_cached, batch))
+
+                for i, result in enumerate(results):
+                    result_bgr = cv2.cvtColor(result, cv2.COLOR_RGB2BGR)
+                    writer.write(result_bgr)
+
+                    if self._progress_callback:
+                        self._progress_callback(batch_start + i + 1, total_frames)
+
+        writer.release()
+        return self._output_path
 
         writer.release()
         return self._output_path
